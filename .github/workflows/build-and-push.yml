@@ -36,7 +36,9 @@ env:
   INTEGRATIONS_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-integrations.git
   WEB_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-web.git
   REGISTRY: ghcr.io
-  IMAGE_OWNER: ${{ github.repository_owner }}
+  # Docker image references must be all-lowercase; github.repository_owner resolves to
+  # the account's exact casing (ZGMFX20AR here), which buildx rejects outright.
+  IMAGE_OWNER: ${{ toLower(github.repository_owner) }}
 
 jobs:
   build-backend:

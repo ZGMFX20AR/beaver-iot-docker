@@ -125,7 +125,7 @@ curl -fsSL https://get.docker.com | sh
 sudo usermod -aG docker $USER   # log out/in after this
 
 # Only if the images are private (step 4):
-docker login ghcr.io -u <your-github-username>   # password = a PAT with read:packages
+docker login ghcr.io -u zgmfx20ar   # password = a PAT with read:packages
 ```
 
 Copy `deploy/docker-compose.yml` (and `deploy/docker-compose.hailo.yml` if this machine
@@ -133,13 +133,18 @@ has the Hailo-10H) to the remote machine, then:
 
 ```bash
 # Standard machine (amd64, or arm64 without the NPU):
-IMAGE_OWNER=<your-github-username> docker compose -f docker-compose.yml up -d
+IMAGE_OWNER=zgmfx20ar docker compose -f docker-compose.yml up -d
 
 # Hailo-equipped arm64 machine - confirm the device node name first:
 ls /dev/h1x-* /dev/hailo* 2>/dev/null
-IMAGE_OWNER=<your-github-username> \
+IMAGE_OWNER=zgmfx20ar \
   docker compose -f docker-compose.yml -f docker-compose.hailo.yml up -d
 ```
+
+`IMAGE_OWNER` must be **lowercase** - Docker image references reject the account's
+actual casing (`ZGMFX20AR`) outright, which is exactly what broke the first build
+attempt (see the workflow's `IMAGE_OWNER` comment). GitHub's own URLs and `git clone`
+are case-insensitive, so this only bites at the Docker layer, easy to miss.
 
 Verify:
 ```bash
