@@ -36,12 +36,23 @@ env:
   INTEGRATIONS_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-integrations.git
   WEB_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-web.git
   REGISTRY: ghcr.io
-  # Docker image references must be all-lowercase; github.repository_owner resolves to
-  # the account's exact casing (ZGMFX20AR here), which buildx rejects outright.
-  IMAGE_OWNER: ${{ toLower(github.repository_owner) }}
 
 jobs:
+  # Docker image references must be all-lowercase; github.repository_owner resolves to
+  # the account's exact casing (ZGMFX20AR here), which buildx rejects outright at push
+  # time. GitHub Actions expressions have no built-in case-conversion function, so this
+  # has to go through an actual shell step rather than `${{ }}` alone.
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      image_owner: ${{ steps.owner.outputs.value }}
+    steps:
+      - name: Lowercase the image owner
+        id: owner
+        run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+
   build-backend:
+    needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -93,12 +104,13 @@ jobs:
             INTEGRATIONS_GIT_REPO_URL=${{ env.INTEGRATIONS_GIT_REPO_URL }}
             INTEGRATIONS_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-api:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-api:${{ github.run_number }}
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:latest
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:${{ github.run_number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   build-frontend:
+    needs: prepare
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -139,7 +151,7 @@ jobs:
             WEB_GIT_REPO_URL=${{ env.WEB_GIT_REPO_URL }}
             WEB_GIT_BRANCH=${{ steps.branch.outputs.web_branch }}
           tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-web:latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-web:${{ github.run_number }}
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-web:latest
+            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-web:${{ github.run_number }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
