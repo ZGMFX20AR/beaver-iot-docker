@@ -13,6 +13,11 @@ services:
   beaver-iot-api:
     image: ghcr.io/${IMAGE_OWNER:?set IMAGE_OWNER to your GitHub username or org}/beaver-iot-api:latest
     container_name: beaver-iot-api
+    # Explicit hostname, not just container_name - Docker doesn't set the container's
+    # actual OS-level hostname to container_name automatically, and the app's Snowflake
+    # ID generator calls InetAddress.getLocalHost() at startup, which fails to resolve
+    # Docker's auto-generated random container-ID hostname on some hosts/network setups.
+    hostname: beaver-iot-api
     restart: unless-stopped
     ports:
       - "9200:9200"
@@ -48,7 +53,11 @@ services:
       - com.centurylabs.watchtower.enable=true
 
   watchtower:
-    image: containrrr/watchtower
+    # containrrr/watchtower is archived (Feb 2024); its :latest tag has gone stale on
+    # some architectures - it pulled an image here with a Docker API client so old
+    # (v1.25) the daemon refused it (minimum supported v1.40). This is the actively
+    # maintained continuation of the same project.
+    image: ghcr.io/nicholas-fedor/watchtower:latest
     container_name: watchtower
     restart: unless-stopped
     volumes:
