@@ -1,0 +1,140 @@
+name: Build and Push (auto-deploy pipeline)
+
+# Builds the backend (with NPU-conditional Hailo binaries, see beaver-iot-api-npu.dockerfile)
+# and frontend images from source across all three repos, multi-arch, and pushes them to
+# GHCR. Watchtower on the deployment machine polls the registry and redeploys on its own -
+# this workflow's only job is to make sure a fresh image is there for it to find.
+#
+# Triggered two ways:
+#   - repository_dispatch (type: source-updated): fired by the small "notify" workflow in
+#     each of beaver-iot / beaver-iot-integrations / beaver-iot-web on push to their main
+#     branch. This is what makes "push a feature anywhere" actually rebuild the image -
+#     without it, pushing to those repos would do nothing, since the build itself lives here.
+#   - workflow_dispatch: manual "build now" button, e.g. to retry after fixing a build
+#     failure without needing an empty commit.
+
+on:
+  repository_dispatch:
+    types: [source-updated]
+  workflow_dispatch:
+    inputs:
+      api_git_branch:
+        description: 'Branch to build in beaver-iot / beaver-iot-integrations'
+        required: true
+        default: 'main'
+      web_git_branch:
+        description: 'Branch to build in beaver-iot-web'
+        required: true
+        default: 'main'
+
+env:
+  # Point these at your own forks once created - see the deployment guide.
+  API_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot.git
+  INTEGRATIONS_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-integrations.git
+  WEB_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-web.git
+  REGISTRY: ghcr.io
+  IMAGE_OWNER: ${{ github.repository_owner }}
+
+jobs:
+  build-backend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy Hailo binaries into build context
+        run: |
+          mkdir -p build-docker/hailo-context
+          cp build-docker/npu-context/hailo-ollama build-docker/hailo-context/
+          cp -r build-docker/npu-context/hailo-ollama-share build-docker/hailo-context/
+          cp build-docker/npu-context/libhailort.so.5.3.0 build-docker/hailo-context/
+
+      - name: Set up QEMU (for cross-arch emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve branch to build
+        id: branch
+        run: |
+          # repository_dispatch carries the pushed branch in client_payload; workflow_dispatch
+          # uses the manual input instead.
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "api_branch=${{ github.event.client_payload.branch || 'main' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_branch=${{ github.event.inputs.api_git_branch }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push backend (multi-arch, NPU-conditional)
+        uses: docker/build-push-action@v6
+        with:
+          context: build-docker
+          file: build-docker/beaver-iot-api-npu.dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            API_GIT_REPO_URL=${{ env.API_GIT_REPO_URL }}
+            API_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+            INTEGRATIONS_GIT_REPO_URL=${{ env.INTEGRATIONS_GIT_REPO_URL }}
+            INTEGRATIONS_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-api:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-api:${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  build-frontend:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU (for cross-arch emulation)
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve branch to build
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "web_branch=${{ github.event.client_payload.branch || 'main' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "web_branch=${{ github.event.inputs.web_git_branch }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push frontend (multi-arch)
+        uses: docker/build-push-action@v6
+        with:
+          context: build-docker
+          file: build-docker/beaver-iot-web.dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          build-args: |
+            WEB_GIT_REPO_URL=${{ env.WEB_GIT_REPO_URL }}
+            WEB_GIT_BRANCH=${{ steps.branch.outputs.web_branch }}
+          tags: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-web:latest
+            ${{ env.REGISTRY }}/${{ env.IMAGE_OWNER }}/beaver-iot-web:${{ github.run_number }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

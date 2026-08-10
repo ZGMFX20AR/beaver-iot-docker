@@ -1,0 +1,14 @@
+{
+    "hef_h10h": "5ab3537d638090185ae502a60947aebcb9b584b21d973026b75e1a3742cc2d93",
+    "license": null,
+    "details": {
+        "parent_model": "",
+        "format": "hef",
+        "family": "qwen2",
+        "families": [
+            "qwen2"
+        ],
+        "parameter_size": "1.5B",
+        "quantization_level": "Q4_0"
+    }
+}

@@ -1,0 +1,15 @@
+# Override layered on top of docker-compose.yml for a Hailo-10H-equipped arm64 host.
+# Passes the NPU device through so the backend's bundled hailo-ollama can actually reach
+# the hardware, rather than just having the (arch-conditional) binary present but idle.
+#
+# Confirm the device node name first - it has been h1x-0 on this Pi, but verify with:
+#   ls /dev/h1x-* /dev/hailo* 2>/dev/null
+#
+# Usage:
+#   IMAGE_OWNER=<your-github-username> \
+#     docker compose -f docker-compose.yml -f docker-compose.hailo.yml up -d
+
+services:
+  beaver-iot-api:
+    devices:
+      - /dev/h1x-0:/dev/h1x-0

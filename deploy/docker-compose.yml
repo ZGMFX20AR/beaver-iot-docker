@@ -1,0 +1,68 @@
+# Base deployment stack: portable across amd64 and arm64, no hardware assumptions.
+# On a Hailo-equipped arm64 machine, layer docker-compose.hailo.yml on top - see the
+# deployment guide for when and how.
+#
+# Usage:
+#   docker login ghcr.io -u <your-github-username>       # only if the images are private
+#   IMAGE_OWNER=<your-github-username> docker compose up -d
+#
+# IMAGE_OWNER defaults to nobody if unset - always pass it explicitly or put it in a
+# .env file next to this compose file.
+
+services:
+  beaver-iot-api:
+    image: ghcr.io/${IMAGE_OWNER:?set IMAGE_OWNER to your GitHub username or org}/beaver-iot-api:latest
+    container_name: beaver-iot-api
+    restart: unless-stopped
+    ports:
+      - "9200:9200"
+      - "9201:9201"
+      - "1883:1883"
+      - "8083:8083"
+      - "11434:11434"
+    volumes:
+      - beaver-iot-data:/root/beaver-iot
+      - hailo-ollama-data:/root/.local/share/hailo-ollama
+    environment:
+      BEAVER_IOT_AI_INSIGHT_MODEL: qwen2.5:1.5b
+    labels:
+      # Scopes Watchtower to just this stack rather than every container on the host.
+      - com.centurylabs.watchtower.enable=true
+
+  beaver-iot-web:
+    image: ghcr.io/${IMAGE_OWNER:?set IMAGE_OWNER to your GitHub username or org}/beaver-iot-web:latest
+    container_name: beaver-iot-web
+    restart: unless-stopped
+    depends_on:
+      - beaver-iot-api
+    ports:
+      - "8080:80"
+    environment:
+      # Compose's built-in DNS resolves this to the api container - no docker0-gateway
+      # trick needed, unlike the single-host manual setup this replaces.
+      BEAVER_IOT_API_HOST: beaver-iot-api
+      BEAVER_IOT_API_PORT: "9200"
+      MQTT_BROKER_WS_PATH: /mqtt
+      MQTT_BROKER_MOQUETTE_WEBSOCKET_PORT: "8083"
+    labels:
+      - com.centurylabs.watchtower.enable=true
+
+  watchtower:
+    image: containrrr/watchtower
+    container_name: watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Needed only if the images are private - see the deployment guide.
+      - ${HOME}/.docker/config.json:/config.json:ro
+    environment:
+      # Only touches containers carrying the watchtower.enable label above.
+      WATCHTOWER_LABEL_ENABLE: "true"
+      WATCHTOWER_POLL_INTERVAL: "300"
+      WATCHTOWER_CLEANUP: "true"
+      # Restart api before web, since web has no retry-on-connect-failure of its own.
+      WATCHTOWER_ROLLING_RESTART: "true"
+
+volumes:
+  beaver-iot-data:
+  hailo-ollama-data:

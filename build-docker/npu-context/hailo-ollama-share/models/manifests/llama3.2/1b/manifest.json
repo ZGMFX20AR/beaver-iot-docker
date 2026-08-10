@@ -1,0 +1,14 @@
+{
+    "hef_h10h": "0a0d378c530fb120d81ffcd1bde1b367c7bb1ce6e2d8f3fb8166558eee40536e",
+    "license": null,
+    "details": {
+        "parent_model": "",
+        "format": "hef",
+        "family": "llama3.2",
+        "families": [
+            "llama3.2"
+        ],
+        "parameter_size": "1B",
+        "quantization_level": "Q4_0"
+    }
+}
