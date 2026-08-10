@@ -51,7 +51,14 @@ jobs:
         id: owner
         run: echo "value=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
 
-  build-backend:
+  # The backend build was previously one multi-platform buildx invocation on ubuntu-latest
+  # (amd64), which meant the arm64 leg had to be QEMU-emulated to build it - and a 3-stage
+  # Maven Reactor clone-and-build under QEMU turned out to regularly run past 90+ minutes
+  # with no guarantee of ever finishing. Since this is a public repo, GitHub provides free
+  # hosted native arm64 runners (ubuntu-24.04-arm), so each architecture now builds natively
+  # on its own runner - no emulation, no QEMU step needed in either - and the two resulting
+  # single-arch images are stitched into one multi-arch manifest afterwards.
+  build-backend-amd64:
     needs: prepare
     runs-on: ubuntu-latest
     permissions:
@@ -66,9 +73,6 @@ jobs:
           cp build-docker/npu-context/hailo-ollama build-docker/hailo-context/
           cp -r build-docker/npu-context/hailo-ollama-share build-docker/hailo-context/
           cp build-docker/npu-context/libhailort.so.5.3.0 build-docker/hailo-context/
-
-      - name: Set up QEMU (for cross-arch emulation)
-        uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -91,23 +95,99 @@ jobs:
             echo "api_branch=${{ github.event.inputs.api_git_branch }}" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Build and push backend (multi-arch, NPU-conditional)
+      - name: Build and push backend (linux/amd64, NPU-conditional)
         uses: docker/build-push-action@v6
         with:
           context: build-docker
           file: build-docker/beaver-iot-api-npu.dockerfile
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
           build-args: |
             API_GIT_REPO_URL=${{ env.API_GIT_REPO_URL }}
             API_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
             INTEGRATIONS_GIT_REPO_URL=${{ env.INTEGRATIONS_GIT_REPO_URL }}
             INTEGRATIONS_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
-          tags: |
-            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:latest
-            ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:${{ github.run_number }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # Intermediate, per-arch tag only - never :latest here. The manifest job below
+          # combines this with the arm64 image into the real :latest / :run_number tags.
+          tags: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:${{ github.run_number }}-amd64
+          cache-from: type=gha,scope=backend-amd64
+          cache-to: type=gha,mode=max,scope=backend-amd64
+
+  build-backend-arm64:
+    needs: prepare
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Copy Hailo binaries into build context
+        run: |
+          mkdir -p build-docker/hailo-context
+          cp build-docker/npu-context/hailo-ollama build-docker/hailo-context/
+          cp -r build-docker/npu-context/hailo-ollama-share build-docker/hailo-context/
+          cp build-docker/npu-context/libhailort.so.5.3.0 build-docker/hailo-context/
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve branch to build
+        id: branch
+        run: |
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            echo "api_branch=${{ github.event.client_payload.branch || 'main' }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "api_branch=${{ github.event.inputs.api_git_branch }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Build and push backend (linux/arm64, NPU-conditional)
+        uses: docker/build-push-action@v6
+        with:
+          context: build-docker
+          file: build-docker/beaver-iot-api-npu.dockerfile
+          platforms: linux/arm64
+          push: true
+          build-args: |
+            API_GIT_REPO_URL=${{ env.API_GIT_REPO_URL }}
+            API_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+            INTEGRATIONS_GIT_REPO_URL=${{ env.INTEGRATIONS_GIT_REPO_URL }}
+            INTEGRATIONS_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+          tags: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:${{ github.run_number }}-arm64
+          cache-from: type=gha,scope=backend-arm64
+          cache-to: type=gha,mode=max,scope=backend-arm64
+
+  build-backend-manifest:
+    needs: [prepare, build-backend-amd64, build-backend-arm64]
+    runs-on: ubuntu-latest
+    permissions:
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Combine per-arch images into one multi-arch manifest
+        run: |
+          IMAGE="${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api"
+          docker buildx imagetools create \
+            --tag "$IMAGE:latest" \
+            --tag "$IMAGE:${{ github.run_number }}" \
+            "$IMAGE:${{ github.run_number }}-amd64" \
+            "$IMAGE:${{ github.run_number }}-arm64"
 
   build-frontend:
     needs: prepare
