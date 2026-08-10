@@ -29,7 +29,10 @@ on:
 
 env:
   # Point these at your own forks once created - see the deployment guide.
-  API_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot.git
+  # Named cytron-beaver-iot, not beaver-iot, in this fork - GitHub doesn't redirect
+  # git-clone-over-HTTPS on a rename the way it does browser URLs, so this has to be
+  # the exact current name or the checkout step fails outright.
+  API_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/cytron-beaver-iot.git
   INTEGRATIONS_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-integrations.git
   WEB_GIT_REPO_URL: https://github.com/${{ github.repository_owner }}/beaver-iot-web.git
   REGISTRY: ghcr.io
