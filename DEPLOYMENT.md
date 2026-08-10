@@ -59,19 +59,20 @@ git commit -m "Sync local changes: map widget (base layer, trail, pulse), custom
 
 ## 2. Create your own repos on GitHub
 
-All four repos currently point `origin` at `Milesight-IoT/*` - you don't have push
-access there, and shouldn't push local work into someone else's project uninvited.
-**Fork each one** (top-right "Fork" button on GitHub), then repoint `origin` at your
-fork and push:
+Done. Forked as:
 
-```bash
-for repo in beaver-iot beaver-iot-integrations beaver-iot-web beaver-iot-docker; do
-  cd /home/pi/cytron-dashboard/$repo
-  git remote rename origin upstream
-  git remote add origin https://github.com/<your-username>/$repo.git
-  git push -u origin main
-done
-```
+| Local checkout | Fork |
+|---|---|
+| `beaver-iot` | `github.com/ZGMFX20AR/cytron-beaver-iot` (renamed on fork - not `beaver-iot`) |
+| `beaver-iot-integrations` | `github.com/ZGMFX20AR/beaver-iot-integrations` |
+| `beaver-iot-web` | `github.com/ZGMFX20AR/beaver-iot-web` |
+| `beaver-iot-docker` | `github.com/ZGMFX20AR/beaver-iot-docker` |
+
+`origin` on `upstream` (`Milesight-IoT/*`) remains as `upstream` on each, for pulling
+future updates from there if wanted. `build-and-push.yml`'s `API_GIT_REPO_URL` is
+updated to point at `cytron-beaver-iot` accordingly - if you ever rename it again,
+that env var needs to change too, since GitHub doesn't redirect a git-clone-over-HTTPS
+the way it redirects browser URLs on a rename.
 
 (`beaver-iot-docker` has no upstream fork to speak of since it's small, but the same
 pattern works - fork it too, for consistency and so `notify-docker-build.yml`'s
