@@ -32,7 +32,7 @@ services:
       BEAVER_IOT_AI_INSIGHT_MODEL: qwen2.5:1.5b
     labels:
       # Scopes Watchtower to just this stack rather than every container on the host.
-      - com.centurylabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.enable=true
 
   beaver-iot-web:
     image: ghcr.io/${IMAGE_OWNER:?set IMAGE_OWNER to your GitHub username or org}/beaver-iot-web:latest
@@ -50,7 +50,7 @@ services:
       MQTT_BROKER_WS_PATH: /mqtt
       MQTT_BROKER_MOQUETTE_WEBSOCKET_PORT: "8083"
     labels:
-      - com.centurylabs.watchtower.enable=true
+      - com.centurylinklabs.watchtower.enable=true
 
   watchtower:
     # containrrr/watchtower is archived (Feb 2024); its :latest tag has gone stale on
