@@ -92,6 +92,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g \
     libzstd1 \
     libcap2 \
+    fontconfig \
+    fonts-dejavu-core \
+    fonts-noto-core \
+    fonts-noto-cjk \
+    fonts-noto-color-emoji \
     && rm -rf /var/lib/apt/lists/*
 
 # Install the Hailo binaries only if this build actually produced any (arm64). On
@@ -114,6 +119,22 @@ RUN if [ -f /opt/hailo-src/hailo-ollama ]; then \
 
 COPY --from=app-builder /src/beaver-iot/application/application-standard/target/application-standard-exec.jar /application.jar
 
+# JAVA_OPTS / SPRING_OPTS and -Dloader.path match upstream's own beaver-iot-api image -
+# ${HOME}/beaver-iot/integrations (i.e. /root/beaver-iot/integrations, since this image
+# runs as root and HOME defaults to /root) is a Spring Boot PropertiesLauncher extra
+# classpath dir, letting a user drop additional integration jars into a mounted volume
+# at runtime without rebuilding the image. This is on top of, not instead of, the
+# milesight-gateway integration already compiled into the jar above via the 3-stage
+# Maven build - that one doesn't need this mechanism, but a user's own custom
+# integration would.
+ENV JAVA_OPTS=""
+ENV SPRING_OPTS=""
+
+VOLUME /tmp
+VOLUME /root/beaver-iot
+
 EXPOSE 9200 9201 1883 8083 11434
 
-ENTRYPOINT ["java", "-jar", "/application.jar"]
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+ENTRYPOINT ["/docker-entrypoint.sh"]
+CMD ["/bin/sh", "-c", "java -Dloader.path=${HOME}/beaver-iot/integrations ${JAVA_OPTS} -jar /application.jar ${SPRING_OPTS}"]
