@@ -165,12 +165,14 @@ in `docker compose ps`. If any of them are `Restarting`, see Troubleshooting bel
    then recreating the container.
 5. Confirm the running container reflects the change.
 
-If Watchtower's log shows it checked but found nothing new well past the poll interval,
-the most common cause is the image tag mismatch - the compose file pins `:latest`, so
-confirm the workflow actually pushed to `:latest` (the manifest job does, alongside the
-run-number tag) and that auth from step 5 is actually working from this machine
-(`docker pull ghcr.io/zgmfx20ar/beaver-iot-api:latest` manually to isolate it from
-Watchtower).
+If Watchtower's log shows `scanned=0` on every "Update session completed" line, it isn't
+finding your containers at all - check the label typo in Troubleshooting below before
+anything else. If it shows a nonzero `scanned` count but `updated=0` well past the poll
+interval, the more likely cause is an image tag mismatch - the compose file pins
+`:latest`, so confirm the workflow actually pushed to `:latest` (the manifest job does,
+alongside the run-number tag) and that auth from step 5 is actually working from this
+machine (`docker pull ghcr.io/zgmfx20ar/beaver-iot-api:latest` manually to isolate it
+from Watchtower).
 
 ## 7. Troubleshooting
 
@@ -194,6 +196,19 @@ after a manual edit to the compose file / Dockerfiles:
   Fixed by adding an explicit `hostname: beaver-iot-api` to the service in the compose
   file - `container_name` alone does **not** set the container's actual OS-level
   hostname, which is easy to assume it does.
+- **Watchtower runs fine, polls on schedule, but never updates anything - `docker logs
+  watchtower` shows `scanned=0` on every single "Update session completed" line**, even
+  though `beaver-iot-api` and `beaver-iot-web` are both clearly `Up` - the compose file
+  had a typo in the label Watchtower filters on: `com.centurylabs.watchtower.enable`
+  instead of the real, documented label,
+  **`com.centurylinklabs.watchtower.enable`** (CenturyLink Labs - Watchtower's original
+  creator; confirmed against containrrr.dev/watchtower/container-selection/). With
+  `WATCHTOWER_LABEL_ENABLE=true` set, the typo meant Watchtower's label filter matched
+  zero containers, silently, from the very first deployment - it looked completely
+  healthy the whole time (`(healthy)` in `docker compose ps`, clean logs, no errors) with
+  nothing actually in scope to update. Already fixed in the compose file; if you're
+  running an older pull of it, re-fetch and `docker compose up -d` to apply the label
+  fix (no image rebuild needed for this one).
 - **`docker compose` commands fail with `required variable IMAGE_OWNER is missing a
   value`** after a working `IMAGE_OWNER=zgmfx20ar docker compose ... up -d` - the
   inline-variable form only applies to that one command. Use the `.env` file approach in
