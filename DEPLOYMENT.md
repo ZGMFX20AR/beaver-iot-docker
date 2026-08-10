@@ -107,13 +107,13 @@ background CI job, so slowness itself isn't a problem - just don't expect it bac
 five minutes.
 
 Once it succeeds, two packages will appear under
-`github.com/<your-username>?tab=packages`: `beaver-iot-api` and `beaver-iot-web`.
+`github.com/zgmfx20ar?tab=packages`: `beaver-iot-api` and `beaver-iot-web`.
 
-**Set their visibility.** New GHCR packages are private by default. Either:
-- Make them public (Package settings → Change visibility) - simplest, no further auth
-  needed anywhere, or
-- Keep them private and authenticate on the deployment machine in step 5 - the compose
-  file already mounts `~/.docker/config.json` into Watchtower for this case.
+**Staying private** (the decision made here, and also GHCR's own default for a
+newly-created package - nothing to change). This means every machine that pulls these
+images needs to authenticate first, including the deployment machine and Watchtower -
+covered in step 5, the compose file already mounts `~/.docker/config.json` into
+Watchtower for exactly this.
 
 ## 5. Deploy to the remote machine
 
