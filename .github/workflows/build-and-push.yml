@@ -95,6 +95,19 @@ jobs:
             echo "api_branch=${{ github.event.inputs.api_git_branch }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve commit SHAs (busts the Dockerfile's git-clone layer cache)
+        id: commit
+        run: |
+          # The Dockerfile's `git clone --branch X` RUN instruction is the same literal
+          # text on every build regardless of how many new commits landed on X, so the
+          # GHA remote build cache was reusing a stale clone+build layer across runs -
+          # this is what let a real CSS fix never actually reach a deployed image while
+          # CI stayed green. Passing the actual resolved commit SHA in as a build-arg
+          # that the Dockerfile echoes into that same RUN instruction makes its cache
+          # key change exactly when there's new content to build.
+          echo "api_commit=$(git ls-remote ${{ env.API_GIT_REPO_URL }} ${{ steps.branch.outputs.api_branch }} | cut -f1)" >> "$GITHUB_OUTPUT"
+          echo "integrations_commit=$(git ls-remote ${{ env.INTEGRATIONS_GIT_REPO_URL }} ${{ steps.branch.outputs.api_branch }} | cut -f1)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push backend (linux/amd64, NPU-conditional)
         uses: docker/build-push-action@v6
         with:
@@ -105,8 +118,10 @@ jobs:
           build-args: |
             API_GIT_REPO_URL=${{ env.API_GIT_REPO_URL }}
             API_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+            API_GIT_COMMIT=${{ steps.commit.outputs.api_commit }}
             INTEGRATIONS_GIT_REPO_URL=${{ env.INTEGRATIONS_GIT_REPO_URL }}
             INTEGRATIONS_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+            INTEGRATIONS_GIT_COMMIT=${{ steps.commit.outputs.integrations_commit }}
           # Intermediate, per-arch tag only - never :latest here. The manifest job below
           # combines this with the arm64 image into the real :latest / :run_number tags.
           tags: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:${{ github.run_number }}-amd64
@@ -148,6 +163,12 @@ jobs:
             echo "api_branch=${{ github.event.inputs.api_git_branch }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve commit SHAs (busts the Dockerfile's git-clone layer cache)
+        id: commit
+        run: |
+          echo "api_commit=$(git ls-remote ${{ env.API_GIT_REPO_URL }} ${{ steps.branch.outputs.api_branch }} | cut -f1)" >> "$GITHUB_OUTPUT"
+          echo "integrations_commit=$(git ls-remote ${{ env.INTEGRATIONS_GIT_REPO_URL }} ${{ steps.branch.outputs.api_branch }} | cut -f1)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push backend (linux/arm64, NPU-conditional)
         uses: docker/build-push-action@v6
         with:
@@ -158,8 +179,10 @@ jobs:
           build-args: |
             API_GIT_REPO_URL=${{ env.API_GIT_REPO_URL }}
             API_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+            API_GIT_COMMIT=${{ steps.commit.outputs.api_commit }}
             INTEGRATIONS_GIT_REPO_URL=${{ env.INTEGRATIONS_GIT_REPO_URL }}
             INTEGRATIONS_GIT_BRANCH=${{ steps.branch.outputs.api_branch }}
+            INTEGRATIONS_GIT_COMMIT=${{ steps.commit.outputs.integrations_commit }}
           tags: ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:${{ github.run_number }}-arm64
           cache-from: type=gha,scope=backend-arm64
           cache-to: type=gha,mode=max,scope=backend-arm64
@@ -230,6 +253,18 @@ jobs:
             echo "web_branch=${{ github.event.inputs.web_git_branch }}" >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Resolve commit SHA (busts the Dockerfile's git-clone layer cache)
+        id: commit
+        run: |
+          # The Dockerfile's `git clone`/`git checkout` RUN instructions are the same
+          # literal text on every build regardless of how many new commits landed on
+          # this branch, so the GHA remote build cache was reusing a stale clone+build
+          # layer across runs - exactly what let a real CSS fix never actually reach a
+          # deployed image while CI stayed green. Passing the resolved commit SHA in as
+          # a build-arg that the Dockerfile echoes into that same RUN instruction makes
+          # its cache key change exactly when there's new content to build.
+          echo "web_commit=$(git ls-remote ${{ env.WEB_GIT_REPO_URL }} ${{ steps.branch.outputs.web_branch }} | cut -f1)" >> "$GITHUB_OUTPUT"
+
       - name: Build and push frontend (multi-arch)
         id: build
         uses: docker/build-push-action@v6
@@ -241,6 +276,7 @@ jobs:
           build-args: |
             WEB_GIT_REPO_URL=${{ env.WEB_GIT_REPO_URL }}
             WEB_GIT_BRANCH=${{ steps.branch.outputs.web_branch }}
+            WEB_GIT_COMMIT=${{ steps.commit.outputs.web_commit }}
           tags: |
             ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-web:latest
             ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-web:${{ github.run_number }}

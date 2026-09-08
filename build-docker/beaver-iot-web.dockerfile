@@ -2,6 +2,15 @@ FROM node:20.18.0-alpine3.20 AS web-builder
 
 ARG WEB_GIT_REPO_URL
 ARG WEB_GIT_BRANCH
+# Resolved by the workflow via `git ls-remote` and passed in as the actual commit SHA
+# to build. BuildKit caches a RUN layer by its literal instruction text, not by what
+# the command would fetch over the network - `git clone $URL` is the same string on
+# every run regardless of how many new commits landed upstream, so a remote GHA cache
+# was silently reusing a stale clone+build layer run after run. Referencing this ARG
+# inside the RUN command below makes the layer's cache key change exactly when the
+# resolved commit changes, so a real new commit always busts the cache while an
+# unchanged branch still gets a legitimate cache hit.
+ARG WEB_GIT_COMMIT=unknown
 
 WORKDIR /
 RUN apk add --no-cache git && git clone ${WEB_GIT_REPO_URL} beaver-iot-web
@@ -11,7 +20,7 @@ WORKDIR /beaver-iot-web
 # outright when pnpm's own upstream shipped a new default (blocking dependency
 # install scripts unless explicitly approved) weeks after this last built cleanly,
 # with no change on our side. Bump this version deliberately, not by surprise.
-RUN git checkout ${WEB_GIT_BRANCH} && npm install -g pnpm@10.34.5 && pnpm install && pnpm build
+RUN echo "Building commit ${WEB_GIT_COMMIT}" && git checkout ${WEB_GIT_BRANCH} && npm install -g pnpm@10.34.5 && pnpm install && pnpm build
 
 
 FROM alpine:3.20 AS web

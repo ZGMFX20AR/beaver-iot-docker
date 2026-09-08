@@ -34,8 +34,14 @@ FROM maven:3.9-eclipse-temurin-17 AS core-builder
 ARG API_GIT_REPO_URL
 ARG API_GIT_BRANCH
 ARG REVISION
+# Resolved by the workflow via `git ls-remote` to the actual commit SHA to build.
+# `git clone --branch X` is the same literal RUN instruction every build regardless of
+# how many new commits landed on X, so a remote GHA build cache was reusing a stale
+# clone across runs. Referencing this ARG in the clone RUN busts the cache exactly
+# when the resolved commit changes, not on every run and not never.
+ARG API_GIT_COMMIT=unknown
 WORKDIR /src
-RUN git clone --branch "${API_GIT_BRANCH}" --depth 1 "${API_GIT_REPO_URL}" beaver-iot
+RUN echo "Building commit ${API_GIT_COMMIT}" && git clone --branch "${API_GIT_BRANCH}" --depth 1 "${API_GIT_REPO_URL}" beaver-iot
 WORKDIR /src/beaver-iot
 # This intentionally fails at the `application` module, which needs the integrations
 # jars built in the next stage. Every module before that succeeds and is installed.
@@ -47,9 +53,10 @@ FROM maven:3.9-eclipse-temurin-17 AS integrations-builder
 ARG INTEGRATIONS_GIT_REPO_URL
 ARG INTEGRATIONS_GIT_BRANCH
 ARG REVISION
+ARG INTEGRATIONS_GIT_COMMIT=unknown
 COPY --from=core-builder /root/.m2 /root/.m2
 WORKDIR /src
-RUN git clone --branch "${INTEGRATIONS_GIT_BRANCH}" --depth 1 "${INTEGRATIONS_GIT_REPO_URL}" beaver-iot-integrations
+RUN echo "Building commit ${INTEGRATIONS_GIT_COMMIT}" && git clone --branch "${INTEGRATIONS_GIT_BRANCH}" --depth 1 "${INTEGRATIONS_GIT_REPO_URL}" beaver-iot-integrations
 WORKDIR /src/beaver-iot-integrations
 RUN mvn install -Dmaven.test.skip=true -Drevision="${REVISION}" -B \
     -Dmaven.repo.local=/root/.m2/repository
@@ -59,9 +66,10 @@ FROM maven:3.9-eclipse-temurin-17 AS app-builder
 ARG API_GIT_REPO_URL
 ARG API_GIT_BRANCH
 ARG REVISION
+ARG API_GIT_COMMIT=unknown
 COPY --from=integrations-builder /root/.m2 /root/.m2
 WORKDIR /src
-RUN git clone --branch "${API_GIT_BRANCH}" --depth 1 "${API_GIT_REPO_URL}" beaver-iot
+RUN echo "Building commit ${API_GIT_COMMIT}" && git clone --branch "${API_GIT_BRANCH}" --depth 1 "${API_GIT_REPO_URL}" beaver-iot
 WORKDIR /src/beaver-iot
 RUN mvn install -Dmaven.test.skip=true -Drevision="${REVISION}" -B \
     -Dmaven.repo.local=/root/.m2/repository \
