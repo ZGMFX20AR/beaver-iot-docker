@@ -7,7 +7,11 @@ WORKDIR /
 RUN apk add --no-cache git && git clone ${WEB_GIT_REPO_URL} beaver-iot-web
 
 WORKDIR /beaver-iot-web
-RUN git checkout ${WEB_GIT_BRANCH} && npm install -g pnpm && pnpm install && pnpm build
+# Pinned, not floating "latest" - an unpinned pnpm install once broke this build
+# outright when pnpm's own upstream shipped a new default (blocking dependency
+# install scripts unless explicitly approved) weeks after this last built cleanly,
+# with no change on our side. Bump this version deliberately, not by surprise.
+RUN git checkout ${WEB_GIT_BRANCH} && npm install -g pnpm@10.34.5 && pnpm install && pnpm build
 
 
 FROM alpine:3.20 AS web
