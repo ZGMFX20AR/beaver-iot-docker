@@ -130,8 +130,14 @@ COPY --from=app-builder /src/beaver-iot/application/application-standard/target/
 ENV JAVA_OPTS=""
 ENV SPRING_OPTS=""
 
+# /root/beaver-iot is NOT declared as a VOLUME here, deliberately - it was, and that
+# caused real data loss: a declared VOLUME with no matching explicit mount at container
+# recreation time makes Docker silently create a fresh, empty anonymous volume there,
+# shadowing whatever was already at that path (the app's actual H2 database, among
+# other things) even under an otherwise-correct outer bind mount at /root. Deployments
+# must mount this path explicitly instead (see DEPLOYMENT.md) - a plain directory
+# under an already-mounted parent needs no separate VOLUME declaration to persist.
 VOLUME /tmp
-VOLUME /root/beaver-iot
 
 EXPOSE 9200 9201 1883 8083 11434
 

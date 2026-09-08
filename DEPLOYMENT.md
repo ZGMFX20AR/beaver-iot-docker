@@ -160,12 +160,22 @@ Verified against a real arm64 machine (no Hailo). `-v $(pwd)/beaver-iot:/root` g
 container a dedicated data folder on the host, separate from anything else in your
 working directory (don't mount your whole working directory to `/root` if it has other
 files in it, like a compose file from the split-stack path - the container will write
-its own internal state directly into it, mixed in with your own files):
+its own internal state directly into it, mixed in with your own files).
+
+**The `-v beaver-iot-data:/root/beaver-iot` named volume below is not optional** - this
+is where the app's actual database lives (`~/beaver-iot/h2/beaver.mv.db`). Without an
+explicit mount for that exact path, Docker silently creates a fresh, empty volume there
+every time the container is fully recreated (stop + rm + run), even though the outer
+`/root` bind mount looks like it should cover it - see the first Troubleshooting entry
+below for the real incident this caused. Create the named volume once, then always
+reference it by name, never by relying on the bind mount alone:
 
 ```bash
 mkdir -p beaver-iot
+docker volume create beaver-iot-data
 docker run -d --name beaver-iot \
   -v $(pwd)/beaver-iot:/root \
+  -v beaver-iot-data:/root/beaver-iot \
   -p 5100:80 -p 1883:1883 \
   --hostname beaver-iot \
   -e BEAVER_IOT_API_HOST=localhost \
@@ -182,7 +192,8 @@ Verify:
 curl -s -o /dev/null -w '%{http_code}\n' http://localhost:5100/   # expect 200
 ```
 
-**Upgrade** (matches Milesight's own documented pattern exactly - manual, not automatic):
+**Upgrade** (matches Milesight's own documented pattern exactly - manual, not automatic).
+Same named volume, every time:
 ```bash
 docker stop beaver-iot
 docker rm beaver-iot
@@ -190,12 +201,14 @@ docker pull ghcr.io/zgmfx20ar/beaver-iot:latest
 
 docker run -d --name beaver-iot \
   -v $(pwd)/beaver-iot:/root \
+  -v beaver-iot-data:/root/beaver-iot \
   -p 5100:80 -p 1883:1883 \
   --hostname beaver-iot \
   -e BEAVER_IOT_API_HOST=localhost \
   ghcr.io/zgmfx20ar/beaver-iot:latest
 ```
-The bind-mounted `beaver-iot/` folder persists your data across this cycle.
+The named volume persists your data across this cycle - a plain bind-mounted folder
+alone does not, for the reason explained above.
 
 ### 6b. Split stack - two containers, auto-updates via Watchtower
 
@@ -319,14 +332,31 @@ after a manual edit to the compose file / Dockerfiles:
   compose file) straight to `/root` via `-v $(pwd):/root`. The container writes its own
   internal state under `/root/...`, which lands directly in whatever host folder you
   pointed at. Use a dedicated subfolder instead, e.g. `-v $(pwd)/beaver-iot:/root`.
+- **Real incident: updating the monolith made all existing data disappear** - the app
+  came up fine, just empty, as if freshly installed. Root cause: the image used to
+  declare `/root/beaver-iot` as a Docker `VOLUME` (fixed in this repo now - if you're
+  still hitting this, you're on an old image). A path declared as a `VOLUME` in a
+  Dockerfile gets a **fresh, empty anonymous volume auto-created** for it on every
+  `docker run` that doesn't explicitly mount that exact path - even though the outer
+  `-v $(pwd)/beaver-iot:/root` bind mount looks like it should already cover it, the
+  more specific inner path wins and shadows whatever was there, silently. The old data
+  isn't deleted, just orphaned - recoverable with `docker volume ls` (look for a large,
+  unnamed volume you don't recognize) and `docker run --rm -v <old-id>:/from -v
+  <new-name>:/to alpine cp -a /from/. /to/` to copy it into a properly named volume
+  before pointing a fresh container at that named volume instead. The fix for next
+  time is the explicit `-v beaver-iot-data:/root/beaver-iot` now in every command in
+  this guide - always reference persistent state by a name you chose, never rely on an
+  image's own `VOLUME` declaration or an outer mount to implicitly cover an inner path.
 
 ## 9. Rollback
 
-**Monolith**: pin to an old run-number tag instead of `:latest`:
+**Monolith**: pin to an old run-number tag instead of `:latest` - same named volume as
+always, so this doesn't touch your data either way:
 ```bash
 docker stop beaver-iot && docker rm beaver-iot
 docker run -d --name beaver-iot \
   -v $(pwd)/beaver-iot:/root \
+  -v beaver-iot-data:/root/beaver-iot \
   -p 5100:80 -p 1883:1883 \
   --hostname beaver-iot \
   -e BEAVER_IOT_API_HOST=localhost \
