@@ -169,6 +169,8 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       packages: write
+    outputs:
+      digest: ${{ steps.manifest.outputs.digest }}
     steps:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -181,6 +183,7 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Combine per-arch images into one multi-arch manifest
+        id: manifest
         run: |
           IMAGE="${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api"
           docker buildx imagetools create \
@@ -188,6 +191,11 @@ jobs:
             --tag "$IMAGE:${{ github.run_number }}" \
             "$IMAGE:${{ github.run_number }}-amd64" \
             "$IMAGE:${{ github.run_number }}-arm64"
+          # build-monolith pins BASE_API_IMAGE to this exact digest rather than the
+          # mutable :latest tag - resolving :latest at FROM time is what let a stale
+          # buildx GHA cache layer slip through once already (see build-monolith below).
+          digest=$(docker buildx imagetools inspect "$IMAGE:${{ github.run_number }}" --format '{{.Manifest.Digest}}')
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
 
   build-frontend:
     needs: prepare
@@ -195,6 +203,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
     steps:
       - uses: actions/checkout@v4
 
@@ -221,6 +231,7 @@ jobs:
           fi
 
       - name: Build and push frontend (multi-arch)
+        id: build
         uses: docker/build-push-action@v6
         with:
           context: build-docker
@@ -271,9 +282,16 @@ jobs:
           file: build-docker/beaver-iot-monolith.dockerfile
           platforms: linux/amd64,linux/arm64
           push: true
+          # Pinned to the exact digests build-backend-manifest / build-frontend just
+          # produced, not the mutable :latest tag. `FROM ...:latest` plus a GHA build
+          # cache scoped to this job once let buildx reuse a stale cached layer instead
+          # of re-resolving :latest to its just-updated content - the CSS fix built and
+          # pushed correctly by build-frontend never actually made it into the monolith
+          # image, silently, with a green CI run. A digest is the content, so there's no
+          # tag to go stale.
           build-args: |
-            BASE_API_IMAGE=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api:latest
-            BASE_WEB_IMAGE=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-web:latest
+            BASE_API_IMAGE=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-api@${{ needs.build-backend-manifest.outputs.digest }}
+            BASE_WEB_IMAGE=${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot-web@${{ needs.build-frontend.outputs.digest }}
           tags: |
             ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot:latest
             ${{ env.REGISTRY }}/${{ needs.prepare.outputs.image_owner }}/beaver-iot:${{ github.run_number }}
