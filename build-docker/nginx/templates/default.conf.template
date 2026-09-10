@@ -63,4 +63,36 @@ server {
        break;
     }
 
+    # Relay for an EdgeAI box's video pipeline streams, so a dashboard image widget can
+    # show one. A browser <img> cannot send the Authorization/X-API-Key header the box
+    # demands, and will not accept its self-signed certificate - neither is fixable from
+    # the widget, both being browser rules. So the browser asks nginx for an ordinary
+    # same-origin URL (/iriv-stream/<pipeline id>) and the awkward parts happen here, on
+    # the LAN, where they are not the browser's business.
+    #
+    # Unauthenticated by design: nginx answers this before the API ever sees it, so
+    # anyone who can reach Beaver IoT can view the stream. That matches the posture of a
+    # LAN appliance already served over plain HTTP. Note an <img> could not send Beaver
+    # IoT's own bearer token either, so restricting this would need a signed-URL or
+    # cookie scheme rather than simply turning auth on.
+    #
+    # Only a numeric pipeline id matches, so this cannot be walked onto other paths of
+    # the box's API.
+    location ~ ^/iriv-stream/(\d+)$ {
+       proxy_pass https://${EDGEAI_STREAM_HOST}/api/v1/pipelines/$1/stream?annotated=1;
+       proxy_set_header X-API-Key "${EDGEAI_STREAM_API_KEY}";
+       # The box presents a self-signed certificate. This is nginx's default, but it is
+       # stated so it reads as a decision rather than an oversight.
+       proxy_ssl_verify off;
+       proxy_http_version 1.1;
+       # Unlike every other block here, this one must NOT buffer. An MJPEG response
+       # (multipart/x-mixed-replace) never ends, so buffering it means nginx accumulates
+       # forever and the browser is shown nothing at all. The long timeouts are the same
+       # story: the 60s used elsewhere would sever a live stream every minute.
+       proxy_buffering off;
+       proxy_read_timeout 24h;
+       proxy_send_timeout 24h;
+       break;
+    }
+
 }

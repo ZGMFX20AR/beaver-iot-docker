@@ -43,6 +43,17 @@ ENV MQTT_BROKER_WS_PATH=/mqtt
 ENV MQTT_BROKER_WS_PORT=""
 ENV MQTT_BROKER_MOQUETTE_WEBSOCKET_PORT=8083
 
+# EdgeAI box whose video pipelines are relayed at /iriv-stream/<id> (see nginx/templates
+# /default.conf.template), and the X-API-Key used to reach it. Override both at run time;
+# the key is deliberately not baked into the image.
+#
+# The host must keep a syntactically valid default even when the feature is unused: left
+# empty, nginx reads `proxy_pass https://;` and refuses to start, which would take the
+# whole container down rather than just disabling one widget. Unset, it points at
+# nothing and a stream widget simply fails to load - which is the right way round.
+ENV EDGEAI_STREAM_HOST=127.0.0.1
+ENV EDGEAI_STREAM_API_KEY=""
+
 EXPOSE 80 9200 9201 1883 8083 11434
 
 # ENTRYPOINT (docker-entrypoint.sh) and the JAVA_OPTS/SPRING_OPTS/-Dloader.path CMD

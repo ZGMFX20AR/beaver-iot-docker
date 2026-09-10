@@ -210,6 +210,33 @@ docker run -d --name beaver-iot \
 The named volume persists your data across this cycle - a plain bind-mounted folder
 alone does not, for the reason explained above.
 
+**Optional: relaying an EdgeAI camera stream.** A dashboard image widget can display an
+MJPEG video pipeline from an EdgeAI box, but only through this container - a browser
+`<img>` cannot send the API key the box demands, and will not accept its self-signed
+certificate. nginx does both on the LAN and re-serves the stream same-origin at
+`/iriv-stream/<pipeline id>`. Add two variables to any of the `docker run` commands
+above to enable it:
+
+```bash
+  -e EDGEAI_STREAM_HOST=192.168.1.238 \
+  -e EDGEAI_STREAM_API_KEY=<the box's X-API-Key> \
+```
+
+Then point an image widget (data type URL) at `/iriv-stream/14` - a root-relative path,
+so it keeps working whatever hostname the dashboard is opened by. Verify without a
+browser using `curl -sS -D - http://localhost:5100/iriv-stream/14 | head -c 200`, which
+should report `content-type: multipart/x-mixed-replace`.
+
+Both variables are optional and default to a harmless placeholder host. Leave them out
+and only that widget fails to load. **Do not set `EDGEAI_STREAM_HOST` to an empty
+string**, though: nginx then reads `proxy_pass https://;`, rejects the config, and the
+whole container fails to start rather than merely losing one widget.
+
+Two things to be aware of before enabling it: the relay is **unauthenticated** - anyone
+who can reach Beaver IoT can view the stream, since nginx answers before the API sees
+the request - and the API key is readable by anyone who can inspect the container's
+environment.
+
 ### 6b. Split stack - two containers, auto-updates via Watchtower
 
 Pull just the compose file - no need to clone the whole repo:

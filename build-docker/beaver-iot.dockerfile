@@ -16,6 +16,12 @@ ENV MQTT_BROKER_WS_PATH=/mqtt
 ENV MQTT_BROKER_WS_PORT=""
 ENV MQTT_BROKER_MOQUETTE_WEBSOCKET_PORT=8083
 
+# Required because this image shares nginx/templates with the monolith, which now has an
+# /iriv-stream/ relay block referencing these. Without defaults nginx cannot resolve the
+# variables and refuses to start. See beaver-iot-monolith.dockerfile.
+ENV EDGEAI_STREAM_HOST=127.0.0.1
+ENV EDGEAI_STREAM_API_KEY=""
+
 EXPOSE 80
 EXPOSE 9200
 EXPOSE 1883
