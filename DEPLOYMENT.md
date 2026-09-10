@@ -210,32 +210,32 @@ docker run -d --name beaver-iot \
 The named volume persists your data across this cycle - a plain bind-mounted folder
 alone does not, for the reason explained above.
 
-**Optional: relaying an EdgeAI camera stream.** A dashboard image widget can display an
-MJPEG video pipeline from an EdgeAI box, but only through this container - a browser
-`<img>` cannot send the API key the box demands, and will not accept its self-signed
-certificate. nginx does both on the LAN and re-serves the stream same-origin at
-`/iriv-stream/<pipeline id>`. Add two variables to any of the `docker run` commands
-above to enable it:
+**Relaying EdgeAI camera streams.** A dashboard image widget can display an MJPEG video
+pipeline from an EdgeAI box, but only through this container - a browser `<img>` cannot
+send the API key the box demands, and will not accept its self-signed certificate. The
+API holds the key, fetches the stream, and re-serves it same-origin.
 
-```bash
-  -e EDGEAI_STREAM_HOST=192.168.1.238 \
-  -e EDGEAI_STREAM_API_KEY=<the box's X-API-Key> \
+No container configuration is needed. Add each box in the UI (its address and API key),
+then point an image widget (data type URL) at the path shown for that source:
+
+```
+/api/v1/edgeai-stream/streams/<source id>/<pipeline id>
 ```
 
-Then point an image widget (data type URL) at `/iriv-stream/14` - a root-relative path,
-so it keeps working whatever hostname the dashboard is opened by. Verify without a
-browser using `curl -sS -D - http://localhost:5100/iriv-stream/14 | head -c 200`, which
-should report `content-type: multipart/x-mixed-replace`.
+A root-relative path, so it keeps working whatever hostname the dashboard is opened by.
+Verify without a browser using
+`curl -sS -D - "http://localhost:5100/api/v1/edgeai-stream/streams/<source id>/14" | head -c 200`,
+which should report `content-type: multipart/x-mixed-replace`.
 
-Both variables are optional and default to a harmless placeholder host. Leave them out
-and only that widget fails to load. **Do not set `EDGEAI_STREAM_HOST` to an empty
-string**, though: nginx then reads `proxy_pass https://;`, rejects the config, and the
-whole container fails to start rather than merely losing one widget.
+Two things to be aware of: the relay is **unauthenticated** - anyone who can reach Beaver
+IoT can view any configured camera, which is unavoidable while the consumer is an `<img>`
+tag, since a browser cannot attach a token to one. And each concurrent viewer costs one
+server thread and roughly 0.84 MB/s; the relay refuses further streams past 32 at once
+rather than degrading the rest of the API, returning 503 with `Retry-After`.
 
-Two things to be aware of before enabling it: the relay is **unauthenticated** - anyone
-who can reach Beaver IoT can view the stream, since nginx answers before the API sees
-the request - and the API key is readable by anyone who can inspect the container's
-environment.
+(Earlier builds used `EDGEAI_STREAM_HOST` / `EDGEAI_STREAM_API_KEY` env vars and served
+`/iriv-stream/<id>`. Both are gone - sources are managed in the UI now. A widget still
+pointing at the old path will show a broken image until its URL is updated.)
 
 ### 6b. Split stack - two containers, auto-updates via Watchtower
 
